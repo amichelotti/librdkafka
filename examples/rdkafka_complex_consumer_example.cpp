@@ -151,14 +151,32 @@ public:
 
     part_list_print(partitions);
 
+    RdKafka::Error *error = NULL;
+    RdKafka::ErrorCode ret_err = RdKafka::ERR_NO_ERROR;
+
     if (err == RdKafka::ERR__ASSIGN_PARTITIONS) {
-      consumer->assign(partitions);
-      partition_cnt = (int)partitions.size();
+      if (consumer->rebalance_protocol() == "COOPERATIVE")
+        error = consumer->incremental_assign(partitions);
+      else
+        ret_err = consumer->assign(partitions);
+      partition_cnt += (int)partitions.size();
     } else {
-      consumer->unassign();
-      partition_cnt = 0;
+      if (consumer->rebalance_protocol() == "COOPERATIVE") {
+        error = consumer->incremental_unassign(partitions);
+        partition_cnt -= (int)partitions.size();
+      } else {
+        ret_err = consumer->unassign();
+        partition_cnt = 0;
+      }
     }
-    eof_cnt = 0;
+    eof_cnt = 0; /* FIXME: Won't work well with COOPERATIVE */
+
+    if (error) {
+      std::cerr << "incremental assign failed: " << error->str() << "\n";
+      delete error;
+    } else if (ret_err)
+      std::cerr << "assign failed: " << RdKafka::err2str(ret_err) << "\n";
+
   }
 };
 
